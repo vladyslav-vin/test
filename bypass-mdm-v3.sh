@@ -115,14 +115,15 @@ detect_volumes() {
     local system_vol=""
     local data_vol=""
 
-    info "Detecting APFS volumes..." >&2
+    info "Detecting APFS volumes 1..." >&2
 
-    # Find Macintosh / System volume
+    # Find APFS volumes from the synthesized APFS container only.
+    # This avoids disk images from Recovery.
     while read -r disk; do
         [ -z "$disk" ] && continue
 
-        local volume_name
-        local mount_point
+        local volume_name=""
+        local mount_point=""
 
         volume_name=$(diskutil info "$disk" 2>/dev/null | awk -F': ' '
             /^Volume Name:/ {
@@ -138,17 +139,27 @@ detect_volumes() {
             }
         ')
 
-        if [ "$volume_name" = "Macintosh" ]; then
-            system_vol="$mount_point"
-            info "Found system volume: $system_vol ($disk)" >&2
-        fi
+        case "$volume_name" in
+            Macintosh)
+                if [ -n "$mount_point" ] && [ "$mount_point" != "Not Mounted" ]; then
+                    system_vol="$mount_point"
+                    info "Found system volume: $system_vol ($disk)" >&2
+                fi
+                ;;
+            Data)
+                if [ -n "$mount_point" ] && [ "$mount_point" != "Not Mounted" ]; then
+                    data_vol="$mount_point"
+                    info "Found data volume: $data_vol ($disk)" >&2
+                fi
+                ;;
+        esac
 
-        if [ "$volume_name" = "Data" ]; then
-            data_vol="$mount_point"
-            info "Found data volume: $data_vol ($disk)" >&2
-        fi
-
-    done < <(diskutil list | awk '/APFS Volume/ {print $NF}')
+    done < <(
+        diskutil apfs list 2>/dev/null |
+        awk '/^[[:space:]]*\+-> Volume / {
+            print $4
+        }'
+    )
 
     if [ -z "$system_vol" ]; then
         error_exit "Could not detect system volume."
@@ -157,6 +168,9 @@ detect_volumes() {
     if [ -z "$data_vol" ]; then
         error_exit "Could not detect data volume."
     fi
+
+    info "System volume: $system_vol" >&2
+    info "Data volume: $data_vol" >&2
 
     echo "$system_vol|$data_vol"
 }
