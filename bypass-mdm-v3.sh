@@ -112,65 +112,11 @@ find_available_uid() {
 
 # Function to detect system volumes with multiple fallback strategies
 detect_volumes() {
-    local system_vol=""
-    local data_vol=""
+    local system_vol="/Volumes/Macintosh"
+    local data_vol="/Volumes/Data"
 
-    info "Detecting APFS volumes 1..." >&2
-
-    # Find APFS volumes from the synthesized APFS container only.
-    # This avoids disk images from Recovery.
-    while read -r disk; do
-        [ -z "$disk" ] && continue
-
-        local volume_name=""
-        local mount_point=""
-
-        volume_name=$(diskutil info "$disk" 2>/dev/null | awk -F': ' '
-            /^Volume Name:/ {
-                print $2
-                exit
-            }
-        ')
-
-        mount_point=$(diskutil info "$disk" 2>/dev/null | awk -F': ' '
-            /^Mount Point:/ {
-                print $2
-                exit
-            }
-        ')
-
-        case "$volume_name" in
-            Macintosh)
-                if [ -n "$mount_point" ] && [ "$mount_point" != "Not Mounted" ]; then
-                    system_vol="$mount_point"
-                    info "Found system volume: $system_vol ($disk)" >&2
-                fi
-                ;;
-            Data)
-                if [ -n "$mount_point" ] && [ "$mount_point" != "Not Mounted" ]; then
-                    data_vol="$mount_point"
-                    info "Found data volume: $data_vol ($disk)" >&2
-                fi
-                ;;
-        esac
-
-    done < <(
-        diskutil apfs list 2>/dev/null |
-        awk '/^[[:space:]]*\+-> Volume / {
-            print $4
-        }'
-    )
-
-    if [ -z "$system_vol" ]; then
-        error_exit "Could not detect system volume."
-    fi
-
-    if [ -z "$data_vol" ]; then
-        error_exit "Could not detect data volume."
-    fi
-
-    info "System volume: $system_vol" >&2
-    info "Data volume: $data_vol" >&2
+    info "Using system volume: $system_vol" >&2
+    info "Using data volume: $data_vol" >&2
 
     echo "$system_vol|$data_vol"
 }
