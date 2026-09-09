@@ -115,94 +115,47 @@ detect_volumes() {
     local system_vol=""
     local data_vol=""
 
-    info "Detecting APFS system and data volumes..." >&2
+    info "Detecting APFS volumes..." >&2
 
-    # Get APFS volume information.
-    # APFS roles are more reliable than volume names or /Volumes scanning.
-    local apfs_info
-    apfs_info=$(diskutil apfs list 2>/dev/null)
+    # Find Macintosh / System volume
+    while read -r disk; do
+        [ -z "$disk" ] && continue
 
-    if [ -z "$apfs_info" ]; then
-        error_exit "Could not retrieve APFS volume information."
-    fi
+        local volume_name
+        local mount_point
 
-    # Find the APFS volume with Role: System
-    system_vol=$(echo "$apfs_info" | awk '
-        /APFS Volume Disk \(Role\):/ {
-            line = $0
-            if (line ~ /\(System\)/) {
-                sub(/^.*: /, "", line)
-                sub(/ \(System\)$/, "", line)
-                print line
+        volume_name=$(diskutil info "$disk" 2>/dev/null | awk -F': ' '
+            /^Volume Name:/ {
+                print $2
                 exit
             }
-        }
-    ')
+        ')
 
-    # Find the APFS volume with Role: Data
-    data_vol=$(echo "$apfs_info" | awk '
-        /APFS Volume Disk \(Role\):/ {
-            line = $0
-            if (line ~ /\(Data\)/) {
-                sub(/^.*: /, "", line)
-                sub(/ \(Data\)$/, "", line)
-                print line
+        mount_point=$(diskutil info "$disk" 2>/dev/null | awk -F': ' '
+            /^Mount Point:/ {
+                print $2
                 exit
             }
-        }
-    ')
+        ')
 
-    if [ -n "$system_vol" ]; then
-        info "Found system volume: $system_vol" >&2
-    fi
+        if [ "$volume_name" = "Macintosh" ]; then
+            system_vol="$mount_point"
+            info "Found system volume: $system_vol ($disk)" >&2
+        fi
 
-    if [ -n "$data_vol" ]; then
-        info "Found data volume: $data_vol" >&2
-    fi
+        if [ "$volume_name" = "Data" ]; then
+            data_vol="$mount_point"
+            info "Found data volume: $data_vol ($disk)" >&2
+        fi
 
-    # Fallback: use diskutil info if Role parsing did not work
+    done < <(diskutil list | awk '/APFS Volume/ {print $NF}')
+
     if [ -z "$system_vol" ]; then
-        warn "Could not find System role from diskutil apfs list. Trying diskutil info..." >&2
-
-        for disk in $(diskutil list | awk '/APFS Volume/ {print $NF}'); do
-            local role
-            role=$(diskutil info "$disk" 2>/dev/null | awk -F': ' '
-                /^APFS Volume Role:/ {
-                    print $2
-                    exit
-                }
-            ')
-
-            if [ "$role" = "System" ]; then
-                system_vol="$disk"
-                break
-            fi
-        done
+        error_exit "Could not detect system volume."
     fi
 
     if [ -z "$data_vol" ]; then
-        for disk in $(diskutil list | awk '/APFS Volume/ {print $NF}'); do
-            local role
-            role=$(diskutil info "$disk" 2>/dev/null | awk -F': ' '
-                /^APFS Volume Role:/ {
-                    print $2
-                    exit
-                }
-            ')
-
-            if [ "$role" = "Data" ]; then
-                data_vol="$disk"
-                break
-            fi
-        done
-    fi
-
-    if [ -z "$system_vol" ]; then
-        error_exit "Could not detect APFS System volume."
-    fi
-
-    if [ -z "$data_vol" ]; then
-        error_exit "Could not detect APFS Data volume."
+        error_exit "Could not detect data volume."
     fi
 
     echo "$system_vol|$data_vol"
